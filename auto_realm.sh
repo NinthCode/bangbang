@@ -6,6 +6,7 @@ CONFIG_DIR="/etc/realm"
 CONFIG_FILE="$CONFIG_DIR/config.toml"
 ENDPOINTS_DB="$CONFIG_DIR/endpoints.db"
 SERVICE_NAME="realm"
+FIREWALL_CHAIN="AUTO_REALM"
 
 echo "=========================================================="
 echo "        Realm 转发配置管家 (支持 Alpine/Debian/Ubuntu)"
@@ -45,12 +46,16 @@ detect_environment() {
 install_deps() {
     echo "▶ 正在检查基础依赖..."
     if [ "$INIT_SYS" = "openrc" ]; then
-        apk update >/dev/null 2>&1
-        apk add wget tar gzip ca-certificates >/dev/null 2>&1
+        if ! apk update >/dev/null 2>&1 || ! apk add wget tar gzip ca-certificates iptables iptables-openrc >/dev/null 2>&1; then
+            echo "❌ 基础依赖安装失败。"
+            exit 1
+        fi
     else
         export DEBIAN_FRONTEND=noninteractive
-        apt-get update >/dev/null 2>&1
-        apt-get install -y -q wget tar gzip ca-certificates >/dev/null 2>&1
+        if ! apt-get update >/dev/null 2>&1 || ! apt-get install -y -q wget tar gzip ca-certificates iptables iptables-persistent >/dev/null 2>&1; then
+            echo "❌ 基础依赖安装失败。"
+            exit 1
+        fi
     fi
     echo "  -> 基础依赖检查通过！"
 }
@@ -146,14 +151,19 @@ list_endpoints() {
 
     echo "当前转发配置："
     NO=1
-    while IFS='|' read -r NAME LISTEN REMOTE UDP_ENABLED; do
+    while IFS='|' read -r NAME LISTEN REMOTE UDP_ENABLED ALLOWED_IPS; do
         [ -n "$LISTEN" ] || continue
         if [ "$UDP_ENABLED" = "yes" ]; then
             UDP_TEXT="TCP+UDP"
         else
             UDP_TEXT="TCP"
         fi
-        printf "  [%s] %s | %s -> %s | %s\n" "$NO" "$NAME" "$LISTEN" "$REMOTE" "$UDP_TEXT"
+        if [ -n "$ALLOWED_IPS" ]; then
+            ACCESS_TEXT="允许 IP: $ALLOWED_IPS"
+        else
+            ACCESS_TEXT="允许所有 IP"
+        fi
+        printf "  [%s] %s | %s -> %s | %s | %s\n" "$NO" "$NAME" "$LISTEN" "$REMOTE" "$UDP_TEXT" "$ACCESS_TEXT"
         NO=$((NO + 1))
     done < "$ENDPOINTS_DB"
 }
@@ -229,6 +239,68 @@ read_remote() {
     done
 }
 
+read_allowed_ips() {
+    ALLOWED_IPS_RESULT=""
+    while true; do
+        printf "▶ 允许访问的 IP (多个逗号分割，回车允许所有): "
+        read INPUT_IPS
+        if [ -z "$INPUT_IPS" ]; then
+            ALLOWED_IPS_RESULT=""
+            return
+        fi
+        case "$INPUT_IPS" in
+            *[!0-9.,/]*)
+                echo "  -> 仅支持 IPv4 或 CIDR，多个值用逗号分割，例如 1.2.3.4,5.6.7.0/24。"
+                ;;
+            *)
+                if valid_allowed_ips "$INPUT_IPS"; then
+                    ALLOWED_IPS_RESULT=$INPUT_IPS
+                    return
+                fi
+                echo "  -> IP 或 CIDR 格式无效，请检查地址范围。"
+                ;;
+        esac
+    done
+}
+
+valid_allowed_ips() {
+    INPUT_IPS=$1
+    case "$INPUT_IPS" in
+        *,|,*|*,,*)
+            return 1
+            ;;
+    esac
+
+    for ip in $(echo "$INPUT_IPS" | tr ',' ' '); do
+        if ! echo "$ip" | awk -F'[./]' '
+            NF != 4 && NF != 5 { exit 1 }
+            {
+                for (i = 1; i <= 4; i++) {
+                    if ($i !~ /^[0-9]+$/ || $i < 0 || $i > 255) {
+                        exit 1
+                    }
+                }
+                if (NF == 5 && ($5 !~ /^[0-9]+$/ || $5 < 0 || $5 > 32)) {
+                    exit 1
+                }
+            }
+        '; then
+            return 1
+        fi
+    done
+    return 0
+}
+
+listen_exists() {
+    WANT_LISTEN=$1
+    awk -F'|' -v want="$WANT_LISTEN" '$2 == want { found = 1 } END { exit found ? 0 : 1 }' "$ENDPOINTS_DB"
+}
+
+listen_port() {
+    LISTEN_VALUE=$1
+    echo "${LISTEN_VALUE##*:}"
+}
+
 render_config() {
     ensure_endpoints_db
     {
@@ -243,7 +315,7 @@ render_config() {
         echo "no_tcp = false"
         echo "use_udp = false"
         echo ""
-        while IFS='|' read -r NAME LISTEN REMOTE UDP_ENABLED; do
+        while IFS='|' read -r NAME LISTEN REMOTE UDP_ENABLED ALLOWED_IPS; do
             [ -n "$LISTEN" ] || continue
             echo "[[endpoints]]"
             printf 'listen = "%s"\n' "$LISTEN"
@@ -297,7 +369,7 @@ migrate_existing_config() {
         function flush_endpoint() {
             if (in_endpoint && listen != "" && remote != "") {
                 count++
-                printf "imported-%d|%s|%s|%s\n", count, listen, remote, udp
+                printf "imported-%d|%s|%s|%s|\n", count, listen, remote, udp
             } else if (in_endpoint && (listen != "" || remote != "" || unsupported)) {
                 failed = 1
             }
@@ -360,6 +432,57 @@ migrate_existing_config() {
     chmod 600 "$ENDPOINTS_DB"
     render_config
     echo "✅ 已导入已有转发配置并生成 endpoints.db。"
+}
+
+save_firewall_rules() {
+    if [ "$INIT_SYS" = "openrc" ]; then
+        rc-update add iptables default >/dev/null 2>&1
+        /etc/init.d/iptables save >/dev/null 2>&1
+    elif command -v netfilter-persistent >/dev/null 2>&1; then
+        netfilter-persistent save >/dev/null 2>&1
+    fi
+}
+
+ensure_firewall_chain() {
+    iptables -N "$FIREWALL_CHAIN" >/dev/null 2>&1 || true
+    if ! iptables -C INPUT -j "$FIREWALL_CHAIN" >/dev/null 2>&1; then
+        run_iptables -I INPUT -j "$FIREWALL_CHAIN"
+    fi
+}
+
+run_iptables() {
+    if ! iptables "$@"; then
+        echo "❌ iptables 规则应用失败: $*"
+        exit 1
+    fi
+}
+
+apply_firewall_rules() {
+    if ! command -v iptables >/dev/null 2>&1; then
+        echo "⚠️  未找到 iptables，无法应用 IP 白名单。"
+        return
+    fi
+
+    ensure_firewall_chain
+    run_iptables -F "$FIREWALL_CHAIN"
+
+    while IFS='|' read -r NAME LISTEN REMOTE UDP_ENABLED ALLOWED_IPS; do
+        [ -n "$LISTEN" ] || continue
+        [ -n "$ALLOWED_IPS" ] || continue
+        PORT=$(listen_port "$LISTEN")
+        for ip in $(echo "$ALLOWED_IPS" | tr ',' ' '); do
+            run_iptables -A "$FIREWALL_CHAIN" -p tcp -s "$ip" --dport "$PORT" -j RETURN
+            if [ "$UDP_ENABLED" = "yes" ]; then
+                run_iptables -A "$FIREWALL_CHAIN" -p udp -s "$ip" --dport "$PORT" -j RETURN
+            fi
+        done
+        run_iptables -A "$FIREWALL_CHAIN" -p tcp --dport "$PORT" -j DROP
+        if [ "$UDP_ENABLED" = "yes" ]; then
+            run_iptables -A "$FIREWALL_CHAIN" -p udp --dport "$PORT" -j DROP
+        fi
+    done < "$ENDPOINTS_DB"
+
+    save_firewall_rules
 }
 
 write_service() {
@@ -446,6 +569,8 @@ add_endpoint() {
     LISTEN_PORT=$PORT_RESULT
     read_remote
     REMOTE=$REMOTE_RESULT
+    read_allowed_ips
+    ALLOWED_IPS=$ALLOWED_IPS_RESULT
 
     printf "▶ 是否启用 UDP 转发？[y/N]: "
     read UDP_INPUT
@@ -459,8 +584,14 @@ add_endpoint() {
     esac
 
     LISTEN="$LISTEN_ADDR:$LISTEN_PORT"
-    printf "%s|%s|%s|%s\n" "$NAME" "$LISTEN" "$REMOTE" "$UDP_ENABLED" >> "$ENDPOINTS_DB"
+    if listen_exists "$LISTEN"; then
+        echo "❌ 已存在相同监听地址: $LISTEN"
+        return
+    fi
+
+    printf "%s|%s|%s|%s|%s\n" "$NAME" "$LISTEN" "$REMOTE" "$UDP_ENABLED" "$ALLOWED_IPS" >> "$ENDPOINTS_DB"
     render_config
+    apply_firewall_rules
     restart_service
     echo "✅ 已新增: $LISTEN -> $REMOTE"
 }
@@ -498,6 +629,7 @@ delete_endpoint() {
     mv "$TMP_DB" "$ENDPOINTS_DB"
     chmod 600 "$ENDPOINTS_DB"
     render_config
+    apply_firewall_rules
     restart_service
     echo "✅ 已删除编号 $DELETE_NO。"
 }
@@ -525,6 +657,14 @@ uninstall_realm() {
         systemctl daemon-reload >/dev/null 2>&1
     fi
     rm -f "$REALM_BIN"
+    if command -v iptables >/dev/null 2>&1; then
+        iptables -F "$FIREWALL_CHAIN" >/dev/null 2>&1 || true
+        while iptables -C INPUT -j "$FIREWALL_CHAIN" >/dev/null 2>&1; do
+            iptables -D INPUT -j "$FIREWALL_CHAIN" >/dev/null 2>&1 || break
+        done
+        iptables -X "$FIREWALL_CHAIN" >/dev/null 2>&1 || true
+        save_firewall_rules
+    fi
     rm -rf "$CONFIG_DIR"
     echo "✅ Realm、服务和配置已清理。"
 }
@@ -570,6 +710,7 @@ main_menu() {
                 install_realm
                 write_service
                 render_config
+                apply_firewall_rules
                 restart_service
                 echo "✅ Realm 已重新安装/更新。"
                 ;;
@@ -600,8 +741,10 @@ require_root
 detect_environment
 
 if installed; then
+    install_deps
     migrate_existing_config || exit 1
     write_service
+    apply_firewall_rules
     echo "▶ 检测到 Realm 已安装。"
     main_menu
 else

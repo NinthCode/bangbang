@@ -28,6 +28,7 @@ Realm 转发配置管家，用于在 Alpine、Debian、Ubuntu 上安装 Realm，
 - 创建 `/etc/realm/config.toml` 并使用 `realm -c` 启动。
 - 支持查看、新增、删除多条转发配置。
 - 支持 TCP 转发，单条规则可选择启用 UDP 转发。
+- 支持为单条转发配置允许访问的 IPv4/CIDR；不设置时默认允许所有 IP。
 - 支持重新安装/更新 Realm，或彻底卸载 Realm、服务和配置。
 
 ## 使用方式
@@ -57,6 +58,7 @@ sudo ./auto_realm.sh
 - 代理账号、密码和端口会写入本机系统服务配置中，请注意目标机器的文件权限和登录权限。
 - 白名单留空会放行所有来源，公网机器建议配置白名单。
 - `auto_realm.sh` 会把转发规则保存到 `/etc/realm/endpoints.db`，并自动渲染 `/etc/realm/config.toml`，不建议手动编辑这两个文件。
+- Realm 脚本的访问白名单通过 iptables 的 `AUTO_REALM` chain 管理。某条规则设置允许 IP 后，除白名单 IP 外的来源会被拒绝访问该监听端口；白名单留空则不限制该端口来源。
 - 如果目标机器已经存在 `/etc/realm/config.toml` 但没有 `endpoints.db`，脚本会先备份旧配置，并尝试导入简单的 `[[endpoints]] listen/remote` 规则；无法安全导入时会停止，避免覆盖旧配置。
 - Realm 转发配置中的远端域名或 IP 会保存在目标机器配置文件中，这是转发功能所需信息。
 
