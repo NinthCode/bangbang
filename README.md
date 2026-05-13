@@ -31,6 +31,21 @@ Realm 转发配置管家，用于在 Alpine、Debian、Ubuntu 上安装 Realm，
 - 支持为单条转发配置允许访问的 IPv4/CIDR；不设置时默认允许所有 IP。
 - 支持重新安装/更新 Realm，或彻底卸载 Realm、服务和配置。
 
+### `auto_codex.sh`
+
+Codex 快速配置管家，用于在 Debian、Ubuntu、macOS 上安装、更新、配置、切换 Profile 或卸载 Codex CLI。
+
+主要功能：
+
+- 自动识别 Debian、Ubuntu、macOS 环境。
+- 使用 `nvm` 安装和管理 Node.js/npm，不使用发行版仓库里的旧版 `nodejs npm`。
+- 自动检查 `curl`、`git`、`node`、`npm` 等基础依赖；缺失或 npm 版本过低时先询问再安装/更新。
+- 使用 `npm install -g @openai/codex` 安装或更新 Codex CLI。
+- 支持快速写入、导入或通过 `codex login` 生成 `$HOME/.codex/auth.json`。
+- 支持快速写入 `$HOME/.codex/config.toml` 的常用参数，如 `approval_policy`、`sandbox_mode`、`model_reasoning_effort`。
+- 支持把 `auth.json` 和 `config.toml` 保存为多套 Profile，并可快速列出、切换或删除 Profile。
+- 支持 `npm uninstall -g @openai/codex` 卸载 Codex CLI，并可选择是否删除 Codex 配置目录。
+
 ## 使用方式
 
 Gost 代理脚本：
@@ -51,6 +66,15 @@ sudo ./auto_realm.sh
 
 首次运行会安装 Realm 并引导新增第一条转发配置。后续再次运行脚本，可通过菜单查看、新增、删除转发配置，或重新安装/更新 Realm。
 
+Codex 配置脚本：
+
+```sh
+chmod +x auto_codex.sh
+./auto_codex.sh
+```
+
+按菜单选择安装/更新 Codex、快速设置 `auth.json`、快速设置 `config.toml`、管理 Profile 或卸载 Codex。Debian/Ubuntu 上安装 `curl`、`git`、`ca-certificates` 等基础依赖时可能需要使用 root 权限；Node.js/npm 由当前用户的 `nvm` 管理。
+
 ## 注意事项
 
 - 脚本会安装系统依赖、写入服务文件、修改 iptables 规则，需要 root 权限运行。
@@ -61,6 +85,9 @@ sudo ./auto_realm.sh
 - Realm 脚本的访问白名单通过 iptables 的 `AUTO_REALM` chain 管理。某条规则设置允许 IP 后，除白名单 IP 外的来源会被拒绝访问该监听端口；白名单留空则不限制该端口来源。
 - 如果目标机器已经存在 `/etc/realm/config.toml` 但没有 `endpoints.db`，脚本会先备份旧配置，并尝试导入简单的 `[[endpoints]] listen/remote` 规则；无法安全导入时会停止，避免覆盖旧配置。
 - Realm 转发配置中的远端域名或 IP 会保存在目标机器配置文件中，这是转发功能所需信息。
+- `auto_codex.sh` 会把 Codex 配置保存到 `${CODEX_HOME:-$HOME/.codex}`。写入 `auth.json` 或 `config.toml` 前会自动生成 `.bak.<时间戳>` 备份。
+- Codex Profile 保存在 `${CODEX_HOME:-$HOME/.codex}/profiles/<Profile 名称>`，切换 Profile 时会先备份当前生效配置，再复制目标 Profile。
+- `auth.json` 可能包含 API Key 或登录令牌，请注意本机文件权限、备份文件和 Profile 目录的访问权限。
 
 ## 推送前安全检查
 
