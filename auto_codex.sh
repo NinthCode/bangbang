@@ -282,6 +282,118 @@ toml_escape() {
     printf "%s" "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
+remove_toml_top_key() {
+    FILE=$1
+    KEY=$2
+    TMP_FILE="$FILE.tmp.$$"
+    if [ ! -f "$FILE" ]; then
+        : > "$FILE"
+    fi
+    awk -v key="$KEY" '
+        BEGIN { in_table = 0 }
+        /^\[[^]]+\]/ { in_table = 1 }
+        in_table == 0 && $0 ~ "^[[:space:]]*" key "[[:space:]]*=" { next }
+        { print }
+    ' "$FILE" > "$TMP_FILE"
+    mv "$TMP_FILE" "$FILE"
+}
+
+set_toml_top_key() {
+    FILE=$1
+    KEY=$2
+    VALUE=$3
+    QUOTED=$4
+    remove_toml_top_key "$FILE" "$KEY"
+    TMP_FILE="$FILE.tmp.$$"
+    if [ "$QUOTED" = "yes" ]; then
+        LINE="$KEY = \"$(toml_escape "$VALUE")\""
+    else
+        LINE="$KEY = $VALUE"
+    fi
+    awk -v line="$LINE" '
+        BEGIN { inserted = 0 }
+        inserted == 0 && /^\[[^]]+\]/ {
+            print line
+            inserted = 1
+        }
+        { print }
+        END {
+            if (inserted == 0) {
+                print line
+            }
+        }
+    ' "$FILE" > "$TMP_FILE"
+    mv "$TMP_FILE" "$FILE"
+}
+
+remove_toml_table() {
+    FILE=$1
+    TABLE=$2
+    TMP_FILE="$FILE.tmp.$$"
+    if [ ! -f "$FILE" ]; then
+        : > "$FILE"
+    fi
+    awk -v table="$TABLE" '
+        $0 == "[" table "]" { skip = 1; next }
+        skip == 1 && /^\[/ { skip = 0 }
+        skip == 0 { print }
+    ' "$FILE" > "$TMP_FILE"
+    mv "$TMP_FILE" "$FILE"
+}
+
+set_toml_table_key() {
+    FILE=$1
+    TABLE=$2
+    KEY=$3
+    VALUE=$4
+    QUOTED=$5
+    TMP_FILE="$FILE.tmp.$$"
+    FOUND=0
+    if [ ! -f "$FILE" ]; then
+        : > "$FILE"
+    fi
+    awk -v table="$TABLE" -v key="$KEY" -v value="$VALUE" -v quoted="$QUOTED" '
+        function line_value() {
+            if (quoted == "yes") {
+                return key " = \"" value "\""
+            }
+            return key " = " value
+        }
+        $0 == "[" table "]" { in_target = 1; print; next }
+        in_target == 1 && /^\[/ {
+            if (seen_key == 0) {
+                print line_value()
+            }
+            in_target = 0
+        }
+        in_target == 1 && $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
+            print line_value()
+            seen_key = 1
+            next
+        }
+        { print }
+        END {
+            if (in_target == 1 && seen_key == 0) {
+                print line_value()
+            }
+        }
+    ' "$FILE" > "$TMP_FILE"
+    if grep -q "^\[$TABLE\]$" "$TMP_FILE"; then
+        FOUND=1
+    fi
+    mv "$TMP_FILE" "$FILE"
+    if [ "$FOUND" -eq 0 ]; then
+        {
+            printf '\n[%s]\n' "$TABLE"
+            if [ "$QUOTED" = "yes" ]; then
+                printf '%s = "%s"\n' "$KEY" "$(toml_escape "$VALUE")"
+            else
+                printf '%s = %s\n' "$KEY" "$VALUE"
+            fi
+        } >> "$FILE"
+    fi
+}
+
 write_auth_json() {
     ensure_config_dir
     backup_file "$AUTH_FILE"
@@ -411,6 +523,95 @@ write_config_toml() {
     } > "$CONFIG_FILE"
     chmod 600 "$CONFIG_FILE"
     echo "✅ 已写入 $CONFIG_FILE"
+}
+
+configure_third_party_api() {
+    ensure_config_dir
+    backup_file "$CONFIG_FILE"
+    backup_file "$AUTH_FILE"
+
+    echo "▶ 快速配置第三方 API"
+    read_safe_name "▶ Provider 名称，建议 custom"
+    PROVIDER_NAME=$SAFE_NAME_RESULT
+
+    read_optional_value "▶ Base URL" ""
+    BASE_URL=$VALUE
+    if [ -z "$BASE_URL" ]; then
+        echo "❌ Base URL 不能为空。"
+        return
+    fi
+
+    read_optional_value "▶ Model" "gpt-5.5"
+    MODEL=$VALUE
+
+    read_optional_value "▶ Wire API" "responses"
+    WIRE_API=$VALUE
+
+    if ask_yes_no "该 Provider 是否需要 OpenAI Auth？" "y"; then
+        REQUIRES_AUTH="true"
+    else
+        REQUIRES_AUTH="false"
+    fi
+
+    read_optional_value "▶ API Key (用于写入 auth.json，可留空跳过)" ""
+    API_KEY=$VALUE
+
+    touch "$CONFIG_FILE"
+    set_toml_top_key "$CONFIG_FILE" "model" "$MODEL" "yes"
+    set_toml_top_key "$CONFIG_FILE" "model_provider" "$PROVIDER_NAME" "yes"
+
+    PROVIDER_TABLE="model_providers.$PROVIDER_NAME"
+    remove_toml_table "$CONFIG_FILE" "$PROVIDER_TABLE"
+    {
+        printf '\n[%s]\n' "$PROVIDER_TABLE"
+        printf 'name = "%s"\n' "$(toml_escape "$PROVIDER_NAME")"
+        printf 'wire_api = "%s"\n' "$(toml_escape "$WIRE_API")"
+        printf 'requires_openai_auth = %s\n' "$REQUIRES_AUTH"
+        printf 'base_url = "%s"\n' "$(toml_escape "$BASE_URL")"
+    } >> "$CONFIG_FILE"
+    chmod 600 "$CONFIG_FILE" 2>/dev/null || true
+
+    if [ -n "$API_KEY" ]; then
+        API_KEY_ESC=$(json_escape "$API_KEY")
+        cat > "$AUTH_FILE" <<EOF
+{
+  "auth_mode": "apikey",
+  "OPENAI_API_KEY": "$API_KEY_ESC"
+}
+EOF
+        chmod 600 "$AUTH_FILE"
+        echo "  -> 已写入 $AUTH_FILE"
+    else
+        echo "  -> 已跳过 auth.json 写入。"
+    fi
+
+    echo "✅ 第三方 API 配置已写入 $CONFIG_FILE"
+}
+
+configure_features() {
+    ensure_config_dir
+    backup_file "$CONFIG_FILE"
+    touch "$CONFIG_FILE"
+
+    echo "▶ 配置 [features]"
+    echo "  -> 只写入你明确选择的 feature；不修改其它 config.toml 内容。"
+
+    while true; do
+        read_safe_name "▶ Feature 名称 (例如 web_search_request；输入 done 结束)"
+        FEATURE_NAME=$SAFE_NAME_RESULT
+        if [ "$FEATURE_NAME" = "done" ]; then
+            break
+        fi
+        if ask_yes_no "是否启用 features.$FEATURE_NAME？" "y"; then
+            FEATURE_VALUE="true"
+        else
+            FEATURE_VALUE="false"
+        fi
+        set_toml_table_key "$CONFIG_FILE" "features" "$FEATURE_NAME" "$FEATURE_VALUE" "no"
+        chmod 600 "$CONFIG_FILE" 2>/dev/null || true
+        echo "  -> 已设置 [features] $FEATURE_NAME = $FEATURE_VALUE"
+    done
+    echo "✅ features 配置完成。"
 }
 
 list_profiles() {
@@ -560,19 +761,23 @@ main_menu() {
         echo "  [1] 安装/更新 Codex CLI"
         echo "  [2] 快速设置 auth.json"
         echo "  [3] 快速设置 config.toml"
-        echo "  [4] Profile 配置切换"
-        echo "  [5] 查看状态"
-        echo "  [6] 卸载 Codex CLI"
+        echo "  [4] 快速配置第三方 API"
+        echo "  [5] 配置 [features]"
+        echo "  [6] Profile 配置切换"
+        echo "  [7] 查看状态"
+        echo "  [8] 卸载 Codex CLI"
         echo "  [0] 退出脚本"
-        printf "请输入数字 [1/2/3/4/5/6/0]: "
+        printf "请输入数字 [1/2/3/4/5/6/7/8/0]: "
         read ACTION
         case "$ACTION" in
             1) install_or_update_codex ;;
             2) write_auth_json ;;
             3) write_config_toml ;;
-            4) profile_menu ;;
-            5) show_status ;;
-            6) uninstall_codex ;;
+            4) configure_third_party_api ;;
+            5) configure_features ;;
+            6) profile_menu ;;
+            7) show_status ;;
+            8) uninstall_codex ;;
             0) exit 0 ;;
             *) echo "  -> 无效选择。" ;;
         esac
