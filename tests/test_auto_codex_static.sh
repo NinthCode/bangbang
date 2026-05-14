@@ -14,6 +14,12 @@ grep -q "@openai/codex" "$SCRIPT"
 grep -q "nvm-sh/nvm" "$SCRIPT"
 grep -q "install_or_update_codex" "$SCRIPT"
 grep -q "install_or_update_nvm" "$SCRIPT"
+grep -q "command -v bash" "$SCRIPT"
+grep -q "| bash" "$SCRIPT"
+if grep -q "| sh" "$SCRIPT"; then
+    echo "nvm installer must be piped to bash, not sh" >&2
+    exit 1
+fi
 grep -q "ensure_node_npm" "$SCRIPT"
 grep -q "npm install -g @openai/codex" "$SCRIPT"
 grep -q "npm uninstall -g @openai/codex" "$SCRIPT"
@@ -46,3 +52,5 @@ grep -q "auto_codex.sh" "$README"
 grep -q "Codex" "$README"
 grep -q "nvm" "$README"
 grep -q "Profile" "$README"
+grep -q "wget -O -" "$README"
+grep -q "curl -fsSL" "$README"

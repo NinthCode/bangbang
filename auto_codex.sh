@@ -98,7 +98,7 @@ install_base_deps() {
     echo "▶ 正在检查基础依赖..."
     if [ "$OS" = "debian" ] || [ "$OS" = "ubuntu" ]; then
         MISSING=""
-        for cmd in curl git; do
+        for cmd in curl git bash; do
             if ! command -v "$cmd" >/dev/null 2>&1; then
                 MISSING="$MISSING $cmd"
             fi
@@ -106,9 +106,9 @@ install_base_deps() {
 
         if [ -n "$MISSING" ]; then
             echo "  -> 缺少基础命令:$MISSING"
-            if ask_yes_no "是否使用 apt-get 安装 curl/git/ca-certificates 等基础依赖？" "y"; then
+            if ask_yes_no "是否使用 apt-get 安装 curl/git/bash/ca-certificates 等基础依赖？" "y"; then
                 export DEBIAN_FRONTEND=noninteractive
-                if ! apt-get update >/dev/null 2>&1 || ! apt-get install -y -q curl git ca-certificates >/dev/null 2>&1; then
+                if ! apt-get update >/dev/null 2>&1 || ! apt-get install -y -q curl git bash ca-certificates >/dev/null 2>&1; then
                     echo "❌ 基础依赖安装失败。"
                     exit 1
                 fi
@@ -124,6 +124,10 @@ install_base_deps() {
         fi
         if ! command -v git >/dev/null 2>&1; then
             echo "❌ 缺少 git。请先安装 Xcode Command Line Tools。"
+            exit 1
+        fi
+        if ! command -v bash >/dev/null 2>&1; then
+            echo "❌ 缺少 bash。请先安装 bash。"
             exit 1
         fi
     fi
@@ -156,7 +160,12 @@ install_or_update_nvm() {
         exit 1
     fi
 
-    if ! curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/$NVM_VERSION/install.sh" | sh; then
+    if ! command -v bash >/dev/null 2>&1; then
+        echo "❌ 缺少 bash，无法安装 nvm。"
+        exit 1
+    fi
+
+    if ! curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/$NVM_VERSION/install.sh" | bash; then
         echo "❌ nvm 安装失败。"
         exit 1
     fi

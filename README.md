@@ -57,6 +57,18 @@ chmod +x auto_gost.sh
 sudo ./auto_gost.sh
 ```
 
+也可以直接从 GitHub 下载并执行：
+
+```sh
+wget -O - https://raw.githubusercontent.com/NinthCode/bangbang/main/auto_gost.sh | sudo bash
+```
+
+或：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/NinthCode/bangbang/main/auto_gost.sh | sudo bash
+```
+
 按提示输入用户名、密码、端口和白名单 IP。密码留空时脚本会自动生成随机密码；白名单留空表示放行所有来源。
 
 Realm 转发脚本：
@@ -64,6 +76,18 @@ Realm 转发脚本：
 ```sh
 chmod +x auto_realm.sh
 sudo ./auto_realm.sh
+```
+
+也可以直接从 GitHub 下载并执行：
+
+```sh
+wget -O - https://raw.githubusercontent.com/NinthCode/bangbang/main/auto_realm.sh | sudo bash
+```
+
+或：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/NinthCode/bangbang/main/auto_realm.sh | sudo bash
 ```
 
 首次运行会安装 Realm 并引导新增第一条转发配置。后续再次运行脚本，可通过菜单查看、新增、删除转发配置，或重新安装/更新 Realm。
@@ -75,7 +99,19 @@ chmod +x auto_codex.sh
 ./auto_codex.sh
 ```
 
-按菜单选择安装/更新 Codex、快速设置 `auth.json`、快速设置 `config.toml`、快速配置第三方 API、配置 `[features]`、管理 Profile 或卸载 Codex。Debian/Ubuntu 上安装 `curl`、`git`、`ca-certificates` 等基础依赖时可能需要使用 root 权限；Node.js/npm 由当前用户的 `nvm` 管理。
+也可以直接从 GitHub 下载并执行：
+
+```sh
+wget -O - https://raw.githubusercontent.com/NinthCode/bangbang/main/auto_codex.sh | sudo bash
+```
+
+或：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/NinthCode/bangbang/main/auto_codex.sh | bash
+```
+
+按菜单选择安装/更新 Codex、快速设置 `auth.json`、快速设置 `config.toml`、快速配置第三方 API、配置 `[features]`、管理 Profile 或卸载 Codex。Debian/Ubuntu 上安装 `curl`、`git`、`bash`、`ca-certificates` 等基础依赖时可能需要使用 root 权限；Node.js/npm 由当前用户的 `nvm` 管理。
 
 ## 注意事项
 

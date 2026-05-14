@@ -27,3 +27,7 @@ grep -q "realm -c" "$SCRIPT"
 
 grep -q "auto_realm.sh" "$README"
 grep -q "Realm" "$README"
+grep -q "wget -O - https://raw.githubusercontent.com/NinthCode/bangbang/main/auto_realm.sh | sudo bash" "$README"
+grep -q "curl -fsSL https://raw.githubusercontent.com/NinthCode/bangbang/main/auto_realm.sh | sudo bash" "$README"
+grep -q "wget -O - https://raw.githubusercontent.com/NinthCode/bangbang/main/auto_gost.sh | sudo bash" "$README"
+grep -q "curl -fsSL https://raw.githubusercontent.com/NinthCode/bangbang/main/auto_gost.sh | sudo bash" "$README"
