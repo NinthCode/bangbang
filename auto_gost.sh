@@ -5,6 +5,18 @@ echo "    全平台智能 Gost 代理管家 (支持 Alpine/Debian/Ubuntu)"
 echo "=========================================================="
 echo ""
 
+require_interactive_stdin() {
+    if [ ! -t 0 ]; then
+        echo "❌ auto_gost.sh 是交互式脚本，不能使用 curl|bash 或 wget|bash 方式运行。"
+        echo "请先下载脚本再执行，例如："
+        echo "  curl -fsSL -o /tmp/auto_gost.sh https://raw.githubusercontent.com/NinthCode/bangbang/main/auto_gost.sh && sudo bash /tmp/auto_gost.sh"
+        echo "  wget -O /tmp/auto_gost.sh https://raw.githubusercontent.com/NinthCode/bangbang/main/auto_gost.sh && sudo bash /tmp/auto_gost.sh"
+        exit 1
+    fi
+}
+
+require_interactive_stdin
+
 # ================= 1. 系统嗅探与环境准备 =================
 if [ -f /etc/os-release ]; then
     . /etc/os-release

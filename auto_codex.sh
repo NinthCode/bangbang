@@ -51,6 +51,16 @@ detect_environment() {
     esac
 }
 
+require_interactive_stdin() {
+    if [ ! -t 0 ]; then
+        echo "❌ auto_codex.sh 是交互式脚本，不能使用 curl|bash 或 wget|bash 方式运行。"
+        echo "请先下载脚本再执行，例如："
+        echo "  curl -fsSL -o /tmp/auto_codex.sh https://raw.githubusercontent.com/NinthCode/bangbang/main/auto_codex.sh && bash /tmp/auto_codex.sh"
+        echo "  wget -O /tmp/auto_codex.sh https://raw.githubusercontent.com/NinthCode/bangbang/main/auto_codex.sh && bash /tmp/auto_codex.sh"
+        exit 1
+    fi
+}
+
 ask_yes_no() {
     PROMPT=$1
     DEFAULT=${2:-n}
@@ -793,6 +803,7 @@ main_menu() {
     done
 }
 
+require_interactive_stdin
 detect_environment
 ensure_config_dir
 main_menu

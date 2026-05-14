@@ -14,6 +14,8 @@ grep -q "@openai/codex" "$SCRIPT"
 grep -q "nvm-sh/nvm" "$SCRIPT"
 grep -q "install_or_update_codex" "$SCRIPT"
 grep -q "install_or_update_nvm" "$SCRIPT"
+grep -q "require_interactive_stdin" "$SCRIPT"
+grep -q "请先下载脚本再执行" "$SCRIPT"
 grep -q "command -v bash" "$SCRIPT"
 grep -q "| bash" "$SCRIPT"
 if grep -q "| sh" "$SCRIPT"; then
@@ -52,5 +54,9 @@ grep -q "auto_codex.sh" "$README"
 grep -q "Codex" "$README"
 grep -q "nvm" "$README"
 grep -q "Profile" "$README"
-grep -q "wget -O -" "$README"
-grep -q "curl -fsSL" "$README"
+grep -q "wget -O /tmp/auto_codex.sh" "$README"
+grep -q "curl -fsSL -o /tmp/auto_codex.sh" "$README"
+if grep -q "auto_codex.sh | bash" "$README"; then
+    echo "interactive auto_codex.sh must not be documented as curl|bash" >&2
+    exit 1
+fi

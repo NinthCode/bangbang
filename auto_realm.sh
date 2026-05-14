@@ -13,6 +13,16 @@ echo "        Realm 转发配置管家 (支持 Alpine/Debian/Ubuntu)"
 echo "=========================================================="
 echo ""
 
+require_interactive_stdin() {
+    if [ ! -t 0 ]; then
+        echo "❌ auto_realm.sh 是交互式脚本，不能使用 curl|bash 或 wget|bash 方式运行。"
+        echo "请先下载脚本再执行，例如："
+        echo "  curl -fsSL -o /tmp/auto_realm.sh https://raw.githubusercontent.com/NinthCode/bangbang/main/auto_realm.sh && sudo bash /tmp/auto_realm.sh"
+        echo "  wget -O /tmp/auto_realm.sh https://raw.githubusercontent.com/NinthCode/bangbang/main/auto_realm.sh && sudo bash /tmp/auto_realm.sh"
+        exit 1
+    fi
+}
+
 require_root() {
     if [ "$(id -u)" != "0" ]; then
         echo "❌ 请使用 root 权限运行本脚本。"
@@ -737,6 +747,7 @@ main_menu() {
     done
 }
 
+require_interactive_stdin
 require_root
 detect_environment
 
