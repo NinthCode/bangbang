@@ -154,6 +154,42 @@ load_nvm() {
     return 1
 }
 
+ensure_shell_profile_nvm() {
+    export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+    PROFILE_FILE=""
+
+    if [ -n "${SHELL:-}" ]; then
+        case "$SHELL" in
+            */zsh)
+                PROFILE_FILE="$HOME/.zshrc"
+                ;;
+            */bash)
+                PROFILE_FILE="$HOME/.bashrc"
+                ;;
+        esac
+    fi
+
+    if [ -z "$PROFILE_FILE" ]; then
+        PROFILE_FILE="$HOME/.bashrc"
+    fi
+
+    if [ ! -f "$PROFILE_FILE" ]; then
+        : > "$PROFILE_FILE"
+    fi
+
+    if ! grep -q 'NVM_DIR="$HOME/.nvm"' "$PROFILE_FILE" 2>/dev/null; then
+        {
+            echo ""
+            echo 'export NVM_DIR="$HOME/.nvm"'
+            echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"'
+            echo '[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"'
+        } >> "$PROFILE_FILE"
+        echo "  -> 已写入 nvm 初始化配置: $PROFILE_FILE"
+    fi
+
+    SHELL_PROFILE_FILE=$PROFILE_FILE
+}
+
 install_or_update_nvm() {
     install_base_deps
     export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
@@ -161,6 +197,7 @@ install_or_update_nvm() {
     if load_nvm; then
         CURRENT_NVM=$(nvm --version 2>/dev/null || echo "unknown")
         echo "  -> 已检测到 nvm: $CURRENT_NVM"
+        ensure_shell_profile_nvm
         return 0
     fi
 
@@ -184,6 +221,7 @@ install_or_update_nvm() {
         echo "❌ nvm 安装后仍无法加载，请重新打开终端后再试。"
         exit 1
     fi
+    ensure_shell_profile_nvm
 }
 
 npm_major_version() {
@@ -239,6 +277,11 @@ install_or_update_codex() {
         if command -v codex >/dev/null 2>&1; then
             codex --version 2>/dev/null || true
         fi
+        echo "  -> 如果退出脚本后 codex 命令不可用，请执行：source ~/.bashrc"
+        if [ -n "${SHELL_PROFILE_FILE:-}" ] && [ "$SHELL_PROFILE_FILE" != "$HOME/.bashrc" ]; then
+            echo "  -> 或执行：. $SHELL_PROFILE_FILE"
+        fi
+        echo "  -> 也可以重新打开终端或重新登录 SSH 后再运行 codex。"
     else
         echo "❌ Codex CLI 安装/更新失败。"
         exit 1
