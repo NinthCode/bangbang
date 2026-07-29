@@ -31,6 +31,19 @@ Realm 转发配置管家，用于在 Alpine、Debian、Ubuntu 上安装 Realm，
 - 支持为单条转发配置允许访问的 IPv4/CIDR；不设置时默认允许所有 IP。
 - 支持重新安装/更新 Realm，或彻底卸载 Realm、服务和配置。
 
+### `auto_shadowsocks.sh`
+
+面向小型 Alpine Linux NAT 服务器的轻量 Shadowsocks 配置管家，用于部署固定端口的 TCP+UDP 代理。
+
+主要功能：
+
+- 从 Alpine community 仓库安装 `shadowsocks-rust-ssserver`，不依赖 Docker 或 glibc。
+- 使用单线程模式降低内存占用。
+- 使用固定的同一端口提供 TCP 和 UDP 服务，避免 SOCKS5 UDP Relay 的随机端口问题。
+- 自动生成 OpenRC 服务并配置开机启动。
+- 自动放行服务端口的 TCP/UDP 防火墙规则。
+- 支持重新配置和彻底卸载。
+
 ### `auto_codex.sh`
 
 Codex 快速配置管家，用于在 Debian、Ubuntu、macOS 上安装、更新、配置、切换 Profile 或卸载 Codex CLI。
@@ -71,6 +84,27 @@ curl -fsSL -o /tmp/auto_gost.sh https://raw.githubusercontent.com/NinthCode/bang
 ```
 
 按提示输入用户名、密码、端口和白名单 IP。密码留空时脚本会自动生成随机密码；白名单留空表示放行所有来源。
+
+Shadowsocks 配置脚本（仅支持 Alpine Linux）：
+
+```sh
+chmod +x auto_shadowsocks.sh
+sudo ./auto_shadowsocks.sh
+```
+
+也可以直接从 GitHub 下载后执行：
+
+```sh
+wget -O /tmp/auto_shadowsocks.sh https://raw.githubusercontent.com/NinthCode/bangbang/main/auto_shadowsocks.sh && sudo sh /tmp/auto_shadowsocks.sh
+```
+
+或：
+
+```sh
+curl -fsSL -o /tmp/auto_shadowsocks.sh https://raw.githubusercontent.com/NinthCode/bangbang/main/auto_shadowsocks.sh && sudo sh /tmp/auto_shadowsocks.sh
+```
+
+脚本默认使用 `20330` 端口和 `chacha20-ietf-poly1305`，并输出带有 `udp-relay=true` 和 `underlying-proxy=sf-de` 的 Surge 配置。NAT 服务商必须同时映射 `20330/TCP` 和 `20330/UDP`；如果选择其它端口，则两个协议都需要映射所选端口。
 
 Realm 转发脚本：
 
@@ -118,6 +152,8 @@ curl -fsSL -o /tmp/auto_codex.sh https://raw.githubusercontent.com/NinthCode/ban
 
 - 脚本会安装系统依赖、写入服务文件、修改 iptables 规则，需要 root 权限运行。
 - 当前脚本固定下载 Gost v2.11.5 的 Linux amd64 构建。
+- `auto_shadowsocks.sh` 仅支持使用 OpenRC 的 Alpine Linux，并要求启用 Alpine community 仓库。
+- Shadowsocks UDP 使用与 TCP 相同的固定服务端口；目标 NAT 必须同时提供该端口的 TCP 和 UDP 映射。
 - 代理账号、密码和端口会写入本机系统服务配置中，请注意目标机器的文件权限和登录权限。
 - 白名单留空会放行所有来源，公网机器建议配置白名单。
 - `auto_realm.sh` 会把转发规则保存到 `/etc/realm/endpoints.db`，并自动渲染 `/etc/realm/config.toml`，不建议手动编辑这两个文件。
